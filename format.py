@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import os, glob
+import util
 import multiprocessing
 cores = multiprocessing.cpu_count()
 pool = multiprocessing.Pool(cores)
@@ -34,14 +35,6 @@ cols_new = [
     'CA','UNIT','SCP', 'STATION','LINENAME','DIVISION',
     'DATE','TIME','DESC','ENTRIES','EXITS']
 cols_final = cols_new + ['DATETIME']
-
-def save_df(df, filename):
-    '''save dataframe as pickled obj to formatted/ directory'''
-    # construct the output filename
-    basename = os.path.basename(filename)
-    outname = os.path.join('formatted', basename)
-    # save pickled dataframe
-    df.to_pickle(outname)
 
 def read_new(filename):
     '''read new-MTA-format file into pandas.dataframe'''
@@ -87,35 +80,18 @@ def read_old(filename):
     return df_restructured
 
 
-def subtract_prev(rows):
-    if len(rows) != 2: return np.nan
-    prev, curr = rows
-    # prev > curr means the odometer has been reset
-    return rows[1] - rows[0] if prev > curr else curr
-subtract_prev_for_series = lambda ser: ser.rolling(window=2).apply(subtract_prev)
-
-
 def is_old_format(filename):
     return os.path.basename(filename) < 'turnstile_141018.txt'
 
+
 # load and reformat raw data and save the dataframes out to disk
-# IMPORTANT: saving the reformatted dataframes to disk allows for faster loading in the future.
-#            reformatting and writing out to disk takes around 10 minutes on my macbook pro.
-if False:
-    turnstile_files = glob.glob(os.path.join('data', '*.txt'))
-    #turnstile_files = [f for f in turnstile_files if not is_old_format(f)]
-    #turnstile_files = [f for f in turnstile_files if f == 'data/turnstile_100807.txt']
+# IMPORTANT: saving the reformatted dataframes to disk allows us to skip this step in the future.
+turnstile_files = glob.glob(os.path.join('data', '*.txt'))
+#turnstile_files = [f for f in turnstile_files if not is_old_format(f)]
+#turnstile_files = [f for f in turnstile_files if f == 'data/turnstile_100807.txt']
 
-    for f in turnstile_files:
-        print 'old' if is_old_format(f) else 'new', f
-        df = read_old(f) if is_old_format(f) else read_new(f)
-        # now that we have a common format, we're going to augment the data
-        # with features that will be useful down the road
-
-        save_df(df,f)
-
-    def read_and_save_file(f):
-        print 'old' if is_old_format(f) else 'new', f
-        df = read_old(f) if is_old_format(f) else read_new(f)
-
-    map(read_and_save_file, turnstile_files)
+### Read in and reformat raw data. save common-format dataframes
+for f in turnstile_files:
+    print 'old' if is_old_format(f) else 'new', f
+    df = read_old(f) if is_old_format(f) else read_new(f)
+    util.save_df(df, f, 'reformatted')

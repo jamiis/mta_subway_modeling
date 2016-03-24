@@ -10,10 +10,10 @@ df = pd.concat(pd.read_pickle(f) for f in reformatted_files)
 
 # we're going to augment the data with features that will be useful
 # first sort values by Station then Turnstile and last by Datetime and reset the indices
-dfs = df.sort_values(['STATION','CA','UNIT','SCP','DATETIME']).reset_index()
+df = df.sort_values(['STATION','CA','UNIT','SCP','DATETIME']).reset_index()
 
 # this will make life easier
-df['TURNSTILE'] = df['CA'] + df['UNIT'] + df['SCP']
+df['TURNSTILE'] = df['CA'] + ',' + df['UNIT'] + ',' + df['SCP']
 
 # calculate ENTRIES_PER_INTERVAL and EXITS_PER_INTERVAL
 # basically, don't depend on odometer reading
@@ -23,10 +23,15 @@ def subtract_prev(rows):
     # prev > curr means the odometer has been reset
     return rows[1] - rows[0] if prev > curr else curr
 subtract_prev_rolling = lambda ser: ser.rolling(window=2).apply(subtract_prev)
+# TODO in ipython notebook show graph of odometer resetting
 # use rolling window to calculate per-interval entries and exits
-dfs_grouped_turnstile = dfs.groupby(['CA','UNIT','SCP','STATION'])
-dfs['ENTRIES_PER_INTERVAL'] = dfs_grouped_turnstile['ENTRIES'].apply(subtract_prev_rolling)
-dfs['EXITS_PER_INTERVAL']   = dfs_grouped_turnstile['EXITS'].apply(subtract_prev_rolling)
+df_grouped_turnstile = df.groupby(['CA','UNIT','SCP','STATION'])
+df['ENTRIES_PER_INTERVAL'] = df_grouped_turnstile['ENTRIES'].apply(subtract_prev_rolling)
+df['EXITS_PER_INTERVAL']   = df_grouped_turnstile['EXITS'].apply(subtract_prev_rolling)
+
+# add column for busyness which is entries + exits
+# this is now very easy given we have <ENTRIES/EXITS>_PER_INTERVAL
+df['BUSYNESS_PER_INTERVAL'] = df.ENTRIES_PER_INTERVAL + df.EXITS_PER_INTERVAL
 
 # add any date information that might be important for modeling
 # do now so we don't have to redo everytime we tweak our model

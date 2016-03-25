@@ -1,5 +1,5 @@
 # this script takes around an hour to download all data 
-# from the MTA on a slow coffee shop connection
+# should be augmented to be async in the future
 mkdir data
 mkdir info
 
@@ -15,3 +15,6 @@ wget --accept txt,xls \
 mv web.mta.info/developers/data/nyct/turnstile/* data
 mv web.mta.info/developers/resources/nyct/turnstile/* info
 rm -rf web.mta.info
+
+# make sure you sudo apt-get install catdoc
+xls2csv info/Remote-Booth-Station.xls > info/Remote-Booth-Station.csv

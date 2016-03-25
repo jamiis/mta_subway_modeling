@@ -3,8 +3,6 @@ import pandas as pd
 import os, glob
 import util
 import multiprocessing
-cores = multiprocessing.cpu_count()
-pool = multiprocessing.Pool(cores)
 
 # create station-information lookup dict based on C/A and Unit
 cols_stations = ['UNIT','CA', 'STATION', 'LINENAME', 'DIVISION']
@@ -86,12 +84,17 @@ def is_old_format(filename):
 
 # load and reformat raw data and save the dataframes out to disk
 # IMPORTANT: saving the reformatted dataframes to disk allows us to skip this step in the future.
-turnstile_files = glob.glob(os.path.join('data', '*.txt'))
+#turnstile_files = glob.glob(os.path.join('data', '*.txt'))
+turnstile_files = glob.glob(os.path.join('bak', '*.txt'))
 #turnstile_files = [f for f in turnstile_files if not is_old_format(f)]
 #turnstile_files = [f for f in turnstile_files if f == 'data/turnstile_100807.txt']
 
 ### Read in and reformat raw data. save common-format dataframes
-for f in turnstile_files:
+def reformat_and_save(f):
     print 'old' if is_old_format(f) else 'new', f
     df = read_old(f) if is_old_format(f) else read_new(f)
     util.save_df(df, f, 'reformatted')
+
+cores = multiprocessing.cpu_count()
+pool = multiprocessing.Pool(cores)
+pool.map(reformat_and_save, turnstile_files)

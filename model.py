@@ -1,5 +1,6 @@
-from sklearn import linear_model
+from sklearn import preprocessing, grid_search
 from sklearn.cross_validation import KFold
+from sklearn.linear_model import SGDRegressor
 import numpy as np
 import pandas as pd
 import util
@@ -11,15 +12,11 @@ df = pd.read_pickle('augmented/turnstile')
 # this will allow us to be more fine grained and robust.
 # to find a four-hour interval we will run the model for 4 times and sum the 
 
-# note: unfortunately UNIT's nums are not unique to STATION's
-#       so we can't use STATION's as features.
-#       also, since we are using regular times, MINUTE will always be 0
-target = ['EXITS_PER_INTERVAL']
-features = [
-    'UNIT',
-    'HOUR','MONTH','YEAR',
-    'DAYOFYEAR','DAYOFWEEK','WEEKOFYEAR',
-]
+# note: unfortunately UNIT's are not unique to STATION's thus can't use STATION's as features.
+#       also, since we are using the regular audit times, MINUTE will always be 0 making useless as a feature.
+#       last, UNIT's will be added as a matrix of one-hot-encoded vectors.
+features = ['HOUR','MONTH','YEAR','DAYOFYEAR','DAYOFWEEK','WEEKOFYEAR']
+target = 'EXITS_PER_INTERVAL'
 
 ### clean the data before modeling.
 # we don't want to take any risks and we have enough data
@@ -31,25 +28,73 @@ regular_times = df.TIME.isin([
 reg_aud = (df.DESC == 'REGULAR')
 df_clean = df[regular_times & reg_aud]
 
-# reduce to features and target
-df_clean = df_clean.loc[:,features+target]
-
+# reduce to features and target. UNIT will be dropped in a moment
+df_clean = df_clean.loc[:,['UNIT']+features+[target]]
 # remove rows with NaN values
-df_clean = df_clean[df_clean.notnull()]
+df_clean = df_clean.dropna()
 
-# split into input and target
-X = df_clean.loc[:,features]
-y = df_clean.loc[:,target]
+# pull out target before scaling features
+y = df_clean.loc[:,target].as_matrix()
+del df_clean[target]
 
-print '% data retained after cleaning', util.perc_of_total_data(df_clean,df)
+# one-hot-encode UNIT since it's a categorical variables
+np_one_hot_encoded = pd.get_dummies(df_clean.UNIT).as_matrix()
+del df_clean['UNIT']
 
-import ipdb; ipdb.set_trace();
-# calculate k-folds for cross validation
-kf = KFold(X.shape[0], n_folds=10, shuffle=True)
-import ipdb; ipdb.set_trace();
+# normalize current set of features to have zero mean and unit variance
+np_scaled = preprocessing.scale(df_clean)
 
-clf = linear_model.SGDRegressor()
+# get final input X of scaled scalars and one-hot-encoded categories
+X = np.concatenate((np_scaled, np_one_hot_encoded), axis=1)
+print '% data retained after cleaning', util.perc_of_total_data(X,df)
+del df_clean, df
+
+# setup model. use simple SGD initially
+# a major advantage of SGD is its efficiency, which is essentially linear 
+# in the number of training examples.
+sgdreg = SGDRegressor(
+    n_iter= np.ceil(10.0**6 / X.shape[0]),
+)
+parameters = {
+    'alpha': 10.0**-np.arange(1,7),
+    'penalty': ['l2','l1','elasticnet'],
+}
+import multiprocessing
+cores = multiprocessing.cpu_count()
+print 'num cores:', cores
+# perform grid search in parallel. need more memory to do full 16-core parallel
+clf = grid_search.GridSearchCV(sgdreg, parameters, n_jobs=cores/2, cv=10)
 clf.fit(X, y)
+
+import ipdb; ipdb.set_trace();
+
+# calculate k-folds for cross validation
+kfolds = KFold(X.shape[0], n_folds=10, shuffle=True)
+
+
+# Compute RMSE using 10-fold x-validation
+xval_err = 0
+for idx, (train, test) in enumerate(kfolds):
+    print 'fold:', idx
+    y_train, y_test = y[train], y[test]
+    # Don't cheat - fit only on training data
+    scaler = preprocessing.StandardScaler()
+    scaler.fit(X[train])  
+    X_train = scaler.transform(X[train])
+    X_test = scaler.transform(X[test])  # apply same transformation to test data
+
+    sgdreg.fit(X_train, y_train)
+    prediction = sgdreg.predict(X_test)
+    err = prediction - y_test
+    xval_err += np.dot(err,err)
+rmse_10cv = np.sqrt(xval_err/len(X))
+
+method_name = 'Stochastic Gradient Descent Regression'
+print('Method: %s' %method_name)
+#print('RMSE on training: %.4f' %rmse_train)
+print('RMSE on 10-fold CV: %.4f' %rmse_10cv)
+
+import ipdb; ipdb.set_trace();
 
 
 """

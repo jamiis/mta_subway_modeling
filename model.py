@@ -50,63 +50,29 @@ print '% data retained after cleaning', util.perc_of_total_data(X,df)
 del df_clean, df
 
 # setup model. use simple SGD initially
-# a major advantage of SGD is its efficiency, which is essentially linear 
-# in the number of training examples.
+# a major advantage of SGD is its efficiency, which is essentially 
+# linear in the number of training examples.
 sgdreg = SGDRegressor(
-    n_iter= np.ceil(10.0**6 / X.shape[0]),
+    n_iter= np.ceil(10.0**6 / X.shape[0]), # sklearn recommended
 )
 parameters = {
-    'alpha': 10.0**-np.arange(1,7),
+    'alpha': 10.0**-np.arange(1,7), # sklearn recommended
     'penalty': ['l2','l1','elasticnet'],
 }
+
 import multiprocessing
 cores = multiprocessing.cpu_count()
-print 'num cores:', cores
-# perform grid search in parallel. need more memory to do full 16-core parallel
-clf = grid_search.GridSearchCV(sgdreg, parameters, n_jobs=cores/2, cv=10)
+
+# perform grid search in parallel. need more memory to do full 32-core parallel
+num_jobs = cores / 2
+print 'grid search in parallel. num cores used:', num_jobs
+
+import time
+start = time.time()
+clf = grid_search.GridSearchCV(sgdreg, parameters, n_jobs=num_jobs, cv=5)
 clf.fit(X, y)
+print time.time() - start
 
-import ipdb; ipdb.set_trace();
-
-# calculate k-folds for cross validation
-kfolds = KFold(X.shape[0], n_folds=10, shuffle=True)
-
-
-# Compute RMSE using 10-fold x-validation
-xval_err = 0
-for idx, (train, test) in enumerate(kfolds):
-    print 'fold:', idx
-    y_train, y_test = y[train], y[test]
-    # Don't cheat - fit only on training data
-    scaler = preprocessing.StandardScaler()
-    scaler.fit(X[train])  
-    X_train = scaler.transform(X[train])
-    X_test = scaler.transform(X[test])  # apply same transformation to test data
-
-    sgdreg.fit(X_train, y_train)
-    prediction = sgdreg.predict(X_test)
-    err = prediction - y_test
-    xval_err += np.dot(err,err)
-rmse_10cv = np.sqrt(xval_err/len(X))
-
-method_name = 'Stochastic Gradient Descent Regression'
-print('Method: %s' %method_name)
-#print('RMSE on training: %.4f' %rmse_train)
-print('RMSE on 10-fold CV: %.4f' %rmse_10cv)
-
-import ipdb; ipdb.set_trace();
-
-
-"""
-# add boolean columns for existence line at station
-linenames_uniq = df.LINENAME.unique().tolist()
-lines = list(set("".join(linenames_uniq)))
-for line in lines:
-    print line
-    df[line] = df.LINENAME.str.contains(line)
-
-regular_times = df.TIME.isin([
-    '00:00:00', '04:00:00', '08:00:00', 
-    '12:00:00', '16:00:00', '20:00:00',
-])
-"""
+# don't forget to save the model!
+from sklearn.externals import joblib
+joblib.dump(clf, 'estimators/clf.pkl') 
